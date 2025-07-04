@@ -34,4 +34,6 @@
 .vscode
 imgui.ini
 
+.vs
+
 build

@@ -2,7 +2,7 @@
 
 #include <string>
 #include <string_view>
-#include <nlohmann/json.hpp>
+#include <json.hpp>
 
 namespace tr {
 namespace resource {

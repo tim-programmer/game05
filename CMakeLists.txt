@@ -8,6 +8,8 @@ set(CMAKE_C_STANDARD 23)
 
 # set(BUILD_SHARED_LIBS FALSE)
 
+find_package(OpenGL REQUIRED)
+
 set(FETCHCONTENT_QUIET FALSE)
 include(FetchContent)
 
@@ -59,8 +61,7 @@ FetchContent_Declare(gtest
 )
 FetchContent_MakeAvailable(gtest)
 
-FetchContent_Declare(
-    glm
+FetchContent_Declare(glm
     GIT_REPOSITORY https://github.com/g-truc/glm.git
     GIT_TAG        release-1-0-2
     GIT_SHALLOW    TRUE
@@ -68,8 +69,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glm)
 
-FetchContent_Declare(
-    assimp
+FetchContent_Declare(assimp
     GIT_REPOSITORY https://github.com/assimp/assimp.git
     GIT_TAG        v6.0.2
     GIT_SHALLOW    TRUE
@@ -77,8 +77,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(assimp)
 
-FetchContent_Declare(
-    imgui
+FetchContent_Declare(imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
     GIT_TAG        v1.91.9b-docking
     GIT_SHALLOW    TRUE
@@ -86,8 +85,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imgui)
 
-FetchContent_Declare(
-    flecs
+FetchContent_Declare(flecs
     GIT_REPOSITORY https://github.com/SanderMertens/flecs.git
     GIT_TAG        v4.1.0
     GIT_SHALLOW    TRUE
@@ -95,8 +93,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(flecs)
 
-FetchContent_Declare(
-    rapidyaml
+FetchContent_Declare(rapidyaml
     GIT_REPOSITORY https://github.com/biojppm/rapidyaml.git
     GIT_TAG        v0.9.0
     GIT_SHALLOW    TRUE
@@ -124,6 +121,7 @@ target_include_directories(imgui-lib PUBLIC
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
 )
+target_link_libraries(imgui-lib PUBLIC SDL3::SDL3)
 
 add_library(tr
     src/tr/tr_window.cpp
@@ -137,7 +135,7 @@ add_library(tr
 )
 target_include_directories(tr INTERFACE ${CMAKE_CURRENT_LIST_DIR}/src/tr)
 target_include_directories(tr PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/include)
-target_link_libraries(tr SDL3::SDL3 SDL3_image::SDL3_image GL)
+target_link_libraries(tr SDL3::SDL3 SDL3_image::SDL3_image spdlog OpenGL::GL)
 
 
 target_link_libraries(${PROJECT_NAME} 
