@@ -46,12 +46,16 @@ FetchContent_MakeAvailable(SDL3 SDL3_ttf SDL3_image)
 FetchContent_Declare(argpase
     GIT_REPOSITORY https://github.com/p-ranav/argparse.git
     GIT_TAG        v3.2
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE
 )
 FetchContent_MakeAvailable(argpase)
 
 FetchContent_Declare(gtest
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG        v1.17.0
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE
 )
 FetchContent_MakeAvailable(gtest)
 
@@ -59,13 +63,17 @@ FetchContent_Declare(
     glm
     GIT_REPOSITORY https://github.com/g-truc/glm.git
     GIT_TAG        release-1-0-2
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE
 )
 FetchContent_MakeAvailable(glm)
 
 FetchContent_Declare(
     assimp
     GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG        v5.4.3
+    GIT_TAG        v6.0.2
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE
 )
 FetchContent_MakeAvailable(assimp)
 
@@ -73,12 +81,25 @@ FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
     GIT_TAG        v1.91.9b-docking
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE
 )
 FetchContent_MakeAvailable(imgui)
 
-add_executable(${PROJECT_NAME} 
-    src/main.cpp    
+FetchContent_Declare(
+    flecs
+    GIT_REPOSITORY https://github.com/SanderMertens/flecs.git
+    GIT_TAG        v4.1.0
+    GIT_SHALLOW    TRUE
+    GIT_PROGRESS   TRUE
 )
+FetchContent_MakeAvailable(flecs)
+
+
+add_executable(${PROJECT_NAME} 
+    ${CMAKE_CURRENT_LIST_DIR}/src/main.cpp
+)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/include)
 
 add_library(imgui-lib)
 target_sources(imgui-lib PUBLIC 
@@ -88,7 +109,7 @@ target_sources(imgui-lib PUBLIC
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
 target_include_directories(imgui-lib PUBLIC
     ${imgui_SOURCE_DIR}
@@ -98,9 +119,17 @@ target_include_directories(imgui-lib PUBLIC
 add_library(tr
     src/tr/tr_window.cpp
     src/tr/tr_texture.cpp
+    src/tr/tr_shader.cpp
+    src/tr/tr_scope.cpp
+    src/tr/tr_framebuffer.cpp
+    src/tr/resource.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/external/src/gl.c
+    #${CMAKE_CURRENT_LIST_DIR}/external/src/gles2.c
 )
-target_include_directories(tr INTERFACE src/tr)
-target_link_libraries(tr SDL3::SDL3 SDL3_image::SDL3_image)
+target_include_directories(tr INTERFACE ${CMAKE_CURRENT_LIST_DIR}/src/tr)
+target_include_directories(tr PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/include)
+target_link_libraries(tr SDL3::SDL3 SDL3_image::SDL3_image GL)
+
 
 target_link_libraries(${PROJECT_NAME} 
     tr
@@ -109,5 +138,6 @@ target_link_libraries(${PROJECT_NAME}
     spdlog   
     imgui-lib
     glm
+    flecs
     SDL3::SDL3
 )
