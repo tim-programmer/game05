@@ -447,6 +447,7 @@ void dump_gl_extensions(int verbosity)
     }
 }   
 
+#include <filesystem>
 
 int main(int argc, char* argv[])
 {
@@ -456,6 +457,7 @@ int main(int argc, char* argv[])
     size_t width{ 1440 };
     size_t height{ 1024 };
     int verbosity{ 0 };
+    std::string resource_path;
 
     argparse::ArgumentParser program(argv[0], "1.0", argparse::default_arguments::none);
     program.add_argument("--help")
@@ -468,6 +470,7 @@ int main(int argc, char* argv[])
     program.add_argument("-w", "--width").default_value(width).nargs(1).scan<'d', size_t>().store_into(width);
     program.add_argument("-h", "--height").default_value(height).nargs(1).scan<'d', size_t>().store_into(height);
     program.add_argument("--windowed").default_value(windowed).nargs(0).implicit_value(true).store_into(windowed);
+    program.add_argument("-r", "--resources", "--resource-path").default_value("resources").nargs(1).store_into(resource_path);
     // program.add_argument("--font-size").default_value(font_size).store_into(font_size);
 
     try {
@@ -502,7 +505,7 @@ int main(int argc, char* argv[])
     dump_gl_extensions(verbosity);
 
     // XXX Load resources here
-    tr::resource::set_resource_path("resources");   
+    tr::resource::set_resource_path(resource_path);
     nlohmann::json game_data = tr::resource::load_json("game.cfg");
     tr::tr_shader_list shaders;
     for(auto& resource : game_data.items()) {
@@ -528,7 +531,7 @@ int main(int argc, char* argv[])
     bool running{ true };
 
     ImGuiIO& io = ImGui::GetIO();
-    auto font_data = tr::resource::load("fonts/roboto/Roboto-VariableFont_wdth,wght.ttf");
+    auto font_data = tr::resource::load_binary("fonts/roboto/Roboto-VariableFont_wdth,wght.ttf");
     ImFontConfig font_cfg = ImFontConfig();
     font_cfg.FontDataOwnedByAtlas = false;
     io.Fonts->AddFontFromMemoryTTF(font_data.data(), font_data.size(), 20.0f, &font_cfg);

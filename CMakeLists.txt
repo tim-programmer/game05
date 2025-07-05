@@ -6,7 +6,7 @@ enable_language(CXX C ASM)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_C_STANDARD 23)
 
-# set(BUILD_SHARED_LIBS FALSE)
+set(BUILD_SHARED_LIBS FALSE)
 
 find_package(OpenGL REQUIRED)
 
@@ -18,6 +18,9 @@ FetchContent_Declare(spdlog
     GIT_TAG         v1.15.3
 )
 FetchContent_MakeAvailable(spdlog)
+
+set(SDL_STATIC ON CACHE INTERNAL "")
+set(SDL_SHARED OFF CACHE INTERNAL "")
 
 FetchContent_Declare(
     SDL3 
@@ -123,7 +126,7 @@ target_include_directories(imgui-lib PUBLIC
 )
 target_link_libraries(imgui-lib PUBLIC SDL3::SDL3)
 
-add_library(tr
+add_library(tr STATIC
     src/tr/tr_window.cpp
     src/tr/tr_texture.cpp
     src/tr/tr_shader.cpp
@@ -135,7 +138,7 @@ add_library(tr
 )
 target_include_directories(tr INTERFACE ${CMAKE_CURRENT_LIST_DIR}/src/tr)
 target_include_directories(tr PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/include)
-target_link_libraries(tr SDL3::SDL3 SDL3_image::SDL3_image spdlog OpenGL::GL)
+target_link_libraries(tr SDL3::SDL3-static SDL3_image::SDL3_image-static spdlog OpenGL::GL)
 
 
 target_link_libraries(${PROJECT_NAME} 
@@ -146,5 +149,5 @@ target_link_libraries(${PROJECT_NAME}
     imgui-lib
     glm
     flecs
-    SDL3::SDL3
+    SDL3::SDL3-static
 )
