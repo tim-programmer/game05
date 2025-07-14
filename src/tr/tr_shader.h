@@ -4,7 +4,7 @@
 #include <vector>
 #include <memory>
 #include <string_view>
-#include <json.hpp>
+#include <ryml.hpp>
 
 namespace tr {
 
@@ -24,6 +24,6 @@ private:
 
 typedef std::vector<tr_shader> tr_shader_list;
 
-tr_shader_list load_shaders(const nlohmann::json& json);
+tr_shader_list load_shaders(const ryml::NodeRef& yml);
 
 }

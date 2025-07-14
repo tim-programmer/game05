@@ -3,7 +3,15 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <assimp/Importer.hpp>      // C++ importer interface
+#include <assimp/scene.h>           // Output data structure
+#include <assimp/postprocess.h>     // Post processing flags
+
 #include <glad/gl.h>
+
+#include <ryml.hpp>
+
+#include <glm/glm.hpp>
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -23,6 +31,7 @@
 #include "tr/tr_window.h"
 #include "tr/tr_shader.h"
 #include "tr/tr_framebuffer.h"
+#include "tr/tr_vertex.h"
 #include "tr/resource.h"
 
 void CheckGLError(const char* function) {
@@ -34,16 +43,31 @@ void CheckGLError(const char* function) {
 
 GLuint VAO, VBO, EBO;
 
+struct vertex1
+{
+    glm::vec3 pos;
+    uint8_t color[4];
+    glm::vec3 normal;
+};
+
+struct vertex2
+{
+    glm::vec2 tex0;
+    glm::vec2 tex1;
+};
+
 void test_init()
 {
+    // 3 +-------+ 2
+    //   |     / |
+    //   |   /   |
+    //   | /     |
+    // 0 +-------+ 1
     float vertices[] = {
-        -1.0f,  1.0f, 0.0f,
-         1.0f,  1.0f, 0.0f,
-        -1.0f, -1.0f, 0.0f,
-
         -1.0f, -1.0f, 0.0f,
          1.0f, -1.0f, 0.0f,
          1.0f,  1.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f,
         // // first triangle
         // -0.9f, -0.5f, 0.0f,  // left 
         // -0.0f, -0.5f, 0.0f,  // right
@@ -55,8 +79,8 @@ void test_init()
     }; 
 
     unsigned int indices[] = { 
-        0, 1, 3,
-        1, 2, 3,
+        0, 1, 2,
+        2, 3, 0,
      };
 
     //GLuint VAO;
@@ -90,13 +114,27 @@ void test_init()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
+void load_scene_file(std::string_view scene_file)
+{
+    Assimp::Importer importer;
+
+    // And have it read the given file with some example postprocessing
+    // Usually - if speed is not the most important aspect for you - you'll
+    // probably to request more postprocessing than we do in this example.
+    const aiScene* scene = importer.ReadFile(std::string(scene_file),
+        aiProcess_Triangulate            |
+        aiProcess_JoinIdenticalVertices  |
+        aiProcess_SortByPType);
+}
+
 void test(tr::framebuffer& fbo)
 {
     tr::scope buffer(fbo);
     // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
     glBindVertexArray(VAO); 
     // set the count to 6 since we're drawing 6 vertices now (2 triangles); not 3!
-    glDrawArrays(GL_TRIANGLES, 0, 6); 
+    //glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
 void init_imgui(tr::tr_window& wnd)
@@ -455,7 +493,7 @@ int main(int argc, char* argv[])
 
     bool windowed{ false };
     size_t width{ 1440 };
-    size_t height{ 1024 };
+    size_t height{ 960 };
     int verbosity{ 0 };
     std::string resource_path;
 
@@ -476,7 +514,7 @@ int main(int argc, char* argv[])
     try {
         program.parse_args(argc, argv);
     } catch (const std::exception& err) {
-        spdlog::critical("Parsing command line arguments failed");
+        spdlog::critical("Parsing command line arguments failed. {}", err.what());
         // Print help for arguments.
         std::cout << program;
         std::exit(1);
@@ -506,15 +544,9 @@ int main(int argc, char* argv[])
 
     // XXX Load resources here
     tr::resource::set_resource_path(resource_path);
-    nlohmann::json game_data = tr::resource::load_json("game.cfg");
-    tr::tr_shader_list shaders;
-    for(auto& resource : game_data.items()) {
-        if(resource.key() == "shader_programs") {
-            shaders = tr::load_shaders(resource.value());
-        } else {
-            /// XXX
-        }
-    }
+    //nlohmann::json game_data = tr::resource::load_json("game.cfg");
+    ryml::Tree game_data = tr::resource::load_structured("game.yml");
+    tr::tr_shader_list shaders = tr::load_shaders(game_data.rootref()["shader_programs"]);
 
     init_imgui(main_window);
 
@@ -527,6 +559,28 @@ int main(int argc, char* argv[])
     test_init();
     tr::framebuffer fbo(width, height);
 
+    auto vto = tr::vertex_object::create("opengl");
+    // must match vertex1 and vertex2 definitions
+    tr::vertex_format_list_t fmt_v1_buffer{
+        // attribute 0 is the position
+        tr::vertex_format{ 0, 3, tr::data_format::FLOAT32, offsetof(vertex1, pos) },
+        // attribute 1 is the color
+        tr::vertex_format{ 1, 4, tr::data_format::UINT8, tr::vertex_format_conversion::float_range, offsetof(vertex1, color) },
+        // attribute 2 is the normal
+        tr::vertex_format{ 2, 3, tr::data_format::FLOAT32, offsetof(vertex1, normal) },
+    };
+    vto.add(sizeof(vertex1), fmt_v1_buffer, 0);
+
+    tr::vertex_format_list_t fmt_v2_buffer{
+        // attribute 3 is texture co-ordinate 1
+        tr::vertex_format{ 3, 2, tr::data_format::FLOAT32, offsetof(vertex2, tex0) },
+        // attribute 4 is texture co-ordinate 2
+        tr::vertex_format{ 4, 2, tr::data_format::FLOAT32, offsetof(vertex2, tex1) },
+    };
+    vto.add(sizeof(vertex2), fmt_v2_buffer, 0);
+
+    vto.build(tr::data_format::UINT32);
+
     // The running flag
     bool running{ true };
 
@@ -534,7 +588,7 @@ int main(int argc, char* argv[])
     auto font_data = tr::resource::load_binary("fonts/roboto/Roboto-VariableFont_wdth,wght.ttf");
     ImFontConfig font_cfg = ImFontConfig();
     font_cfg.FontDataOwnedByAtlas = false;
-    io.Fonts->AddFontFromMemoryTTF(font_data.data(), font_data.size(), 20.0f, &font_cfg);
+    io.Fonts->AddFontFromMemoryTTF(font_data.data(), static_cast<int>(font_data.size()), 20.0f, &font_cfg);
 
     //The event data
     SDL_Event e;
@@ -650,10 +704,10 @@ int main(int argc, char* argv[])
         if(resize) {
             ImVec2 v = ImGui::GetContentRegionAvail();
             spdlog::info("Resize content size {} x {}", v.x, v.y);
-            fbo.resize(v.x, v.y);
+            fbo.resize(static_cast<size_t>(v.x), static_cast<size_t>(v.y));
         }
         // // Render the FBO texture to an imgui window.
-        ImGui::Image(fbo.texture_id(), ImVec2(fbo.width(), fbo.height()), ImVec2(0, 1), ImVec2(1, 0));
+        ImGui::Image(fbo.texture_id(), ImVec2(fbo.widthf(), fbo.heightf()), ImVec2(0.f, 1.f), ImVec2(1.f, 0.f));
         ImGui::End();
 
 

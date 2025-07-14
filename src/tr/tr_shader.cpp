@@ -144,6 +144,8 @@ tr_shader::tr_shader(std::string_view name, const std::vector<shader_ptr>& shade
         std::exit(1);
     }
 
+    glValidateProgram(program_);
+
     // Always detach shaders after a successful link.
     for(auto& shader : shader_list) {
         glDetachShader(program_, shader->index_);
@@ -164,80 +166,70 @@ tr_shader::~tr_shader()
 // Expects objects, each object having a 'name' and 'shaders' attribute.
 // The name is the name of the shader program and the shaders is a list of objects
 // for the individual shaders.
-tr_shader_list load_shaders(const json& cfg)
+tr_shader_list load_shaders(const ryml::NodeRef& cfg)
 {
-    if(!cfg.is_object()) {
-        spdlog::critical("Expected object containing shader programs.");
-        std::exit(1);
-    }
-
     tr_shader_list programs;
 
-    for(auto& program : cfg.items()) {
-        // key is the name of the program
-        // value is the list of shaders.
-        auto& shader_list = program.value();
-        if(!shader_list.is_array()) {
-            spdlog::critical("Expected shaders to be a list, was {}.", shader_list.type_name());
-            std::exit(1);
-        }
+    for(const auto& program : cfg.children()) {
+        std::string program_name{ program.key().str, program.key().len };
         std::vector<shader_ptr> shaders;
-        for(auto& shader : shader_list) {
-            if(!shader.is_object()) {
-                spdlog::critical("Expected shader to be an object, was {}.", shader.type_name());
+        for(const auto& shader : program.children()) {
+            if(!shader.is_container()) {
+                spdlog::critical("Expected shader to be an object, was {}.", shader.type().type_str());
                 std::exit(1);
             }
 
-            if(!shader.contains("file") || !shader.contains("type")) {
-                spdlog::critical("Expected shader to specify \"file\" and \"type\" fields. Found: {}", shader.dump());
-                std::exit(1);
-            }
+            const auto& type = shader["type"].val();
+            const std::string shader_type{ type.str, type.len };
 
-            auto& fn = shader["file"];
-            if((!fn.is_string())) {
-                spdlog::critical("Expected \"file\" to be a string. Found: {}", fn.type_name());
-                std::exit(1);
-            }
-            auto& type = shader["type"];
-            if((!type.is_string())) {
-                spdlog::critical("Expected \"type\" to be a string. Found: {}", type.type_name());
-                std::exit(1);
-            }
-         
-            const std::string shader_filename = fn.template get<std::string>();
-            const std::string shader_type = type.template get<std::string>();
-
-            const bool is_binary_shader = shader_filename.contains(".spv") ? true : false;
+            const std::string shader_name = program_name  + '_' + shader_type;
 
             shader_ptr shd = nullptr;
-            if(is_binary_shader)
+
+            if(shader.has_child("entry_point")) {
+                const auto& ep = shader["entry_point"].val();
+                const std::string end_point{ ep.str, ep.len };
+                shd->entry_point_ = end_point;
+                spdlog::debug("Setting entry point for shader \"{}\" to \"{}\"", program_name, shd->entry_point_);
+            }
+
+            if(shader.has_child("file"))
             {
-                shd = binary_shader_factory(shader_filename, resource::load_binary(shader_filename), shader_type);
+                const auto& fn = shader["file"].val();
+                const std::string filename{ fn.str, fn.len };
+
+                const bool is_binary_shader = filename.contains(".spv") ? true : false;
+
+                if(is_binary_shader)
+                {
+                    shd = binary_shader_factory(shader_name, resource::load_binary(filename), shader_type);
+                }
+                else
+                {
+                    shd = shader_factory(shader_name, resource::load(filename), shader_type);
+                }
+
+                if(!shd) {
+                    spdlog::critical("Unable to convert shader type ({}) to a shader.", shader_type);
+                    std::exit(1);
+                }
+            }
+            else if(shader.has_child("shader"))
+            {
+                // shader["shader"]
+                const std::string shader_code{ shader["shader"].val().str, shader["shader"].val().len };
+                shd = shader_factory(shader_name, shader_code, shader_type);
             }
             else
             {
-                shd = shader_factory(shader_filename, resource::load(shader_filename), shader_type);
-            }
-
-            if(!shd) {
-               spdlog::critical("Unable to convert shader type ({}) to a shader.", shader_type);
-               std::exit(1);
-            }
-
-            if(shader.contains("entry_point")) {
-                auto& entry_point = shader["entry_point"];
-                if(!entry_point.is_string()) {
-                    spdlog::critical("Expected \"entry_point\" to be a string. Found: {}", entry_point.type_name());
-                    std::exit(1);
-                }
-                shd->entry_point_ = entry_point.template get<std::string>();
-                spdlog::debug("Setting entry point for shader \"{}\" to \"{}\"", shader_filename, shd->entry_point_);
+                spdlog::critical("Expected shader to specify \"file\" and \"type\" fields.");
+                std::exit(1);
             }
 
             shaders.emplace_back(shd);
         }
 
-        programs.emplace_back(program.key(), shaders);
+        programs.emplace_back(program_name, shaders);
     }
     return programs;
 }

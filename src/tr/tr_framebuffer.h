@@ -13,8 +13,10 @@ public:
     void resize(size_t width, size_t height);
     void apply() override;
     void unapply() override;
-    unsigned width() const { return width_; }
-    unsigned height() const { return height_; }
+    size_t width() const { return width_; }
+    float widthf() const { return static_cast<float>(width_); }
+    size_t height() const { return height_; }
+    float heightf() const { return static_cast<float>(height_); }
     unsigned texture_id() const { return tex_; }
 private:
     /// @brief Helper function to unbind the currently bound buffers.

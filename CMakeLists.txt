@@ -96,18 +96,18 @@ FetchContent_Declare(flecs
 )
 FetchContent_MakeAvailable(flecs)
 
-FetchContent_Declare(rapidyaml
+FetchContent_Declare(ryml
     GIT_REPOSITORY https://github.com/biojppm/rapidyaml.git
     GIT_TAG        v0.9.0
     GIT_SHALLOW    TRUE
     GIT_PROGRESS   TRUE
 )
-FetchContent_MakeAvailable(rapidyaml)
+FetchContent_MakeAvailable(ryml)
 
 
 add_executable(${PROJECT_NAME} 
     ${CMAKE_CURRENT_LIST_DIR}/src/main.cpp
-)
+ "src/tr/tr_vertex.cpp")
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/include)
 
 add_library(imgui-lib)
@@ -119,7 +119,7 @@ target_sources(imgui-lib PUBLIC
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-)
+ )
 target_include_directories(imgui-lib PUBLIC
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
@@ -132,22 +132,25 @@ add_library(tr STATIC
     src/tr/tr_shader.cpp
     src/tr/tr_scope.cpp
     src/tr/tr_framebuffer.cpp
+    src/tr/tr_vertex.cpp
     src/tr/resource.cpp
     ${CMAKE_CURRENT_LIST_DIR}/external/src/gl.c
     #${CMAKE_CURRENT_LIST_DIR}/external/src/gles2.c
-)
+ )
 target_include_directories(tr INTERFACE ${CMAKE_CURRENT_LIST_DIR}/src/tr)
 target_include_directories(tr PRIVATE ${CMAKE_CURRENT_LIST_DIR}/external/include)
-target_link_libraries(tr SDL3::SDL3-static SDL3_image::SDL3_image-static spdlog OpenGL::GL)
+target_link_libraries(tr SDL3::SDL3-static SDL3_image::SDL3_image-static spdlog OpenGL::GL ryml::ryml)
 
 
 target_link_libraries(${PROJECT_NAME} 
     tr
     argparse
+    assimp
     gtest
     spdlog   
     imgui-lib
     glm
     flecs
+    ryml::ryml
     SDL3::SDL3-static
 )
