@@ -35,5 +35,6 @@
 imgui.ini
 
 .vs
+.idea
 
 build

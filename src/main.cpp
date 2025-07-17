@@ -56,6 +56,11 @@ struct vertex2
     glm::vec2 tex1;
 };
 
+struct basic_vertex
+{
+    glm::vec3 pos;
+};
+
 void test_init()
 {
     // 3 +-------+ 2
@@ -556,30 +561,58 @@ int main(int argc, char* argv[])
     bool show_another_window{ false };
     bool resize{ true };
 
-    test_init();
+    //test_init();
     tr::framebuffer fbo(width, height);
 
+    // GLAD_GL_ARB_vertex_attrib_binding = 0;
+    // GLAD_GL_ARB_direct_state_access = 0;
+
     auto vto = tr::vertex_object::create("opengl");
-    // must match vertex1 and vertex2 definitions
-    tr::vertex_format_list_t fmt_v1_buffer{
+    tr::vertex_format_list_t basic_vertex_fmt{
         // attribute 0 is the position
-        tr::vertex_format{ 0, 3, tr::data_format::FLOAT32, offsetof(vertex1, pos) },
-        // attribute 1 is the color
-        tr::vertex_format{ 1, 4, tr::data_format::UINT8, tr::vertex_format_conversion::float_range, offsetof(vertex1, color) },
-        // attribute 2 is the normal
-        tr::vertex_format{ 2, 3, tr::data_format::FLOAT32, offsetof(vertex1, normal) },
+        tr::vertex_format{ 0, 3, tr::data_format::FLOAT32, offsetof(basic_vertex, pos) },
     };
-    vto.add(sizeof(vertex1), fmt_v1_buffer, 0);
+    vto.add(sizeof(vertex1), basic_vertex_fmt);
+    vto.build(true, tr::data_format::UINT8);
 
-    tr::vertex_format_list_t fmt_v2_buffer{
-        // attribute 3 is texture co-ordinate 1
-        tr::vertex_format{ 3, 2, tr::data_format::FLOAT32, offsetof(vertex2, tex0) },
-        // attribute 4 is texture co-ordinate 2
-        tr::vertex_format{ 4, 2, tr::data_format::FLOAT32, offsetof(vertex2, tex1) },
+    std::vector<float> vertices{
+        -1.0f, -1.0f, 0.0f,
+         1.0f, -1.0f, 0.0f,
+         1.0f,  1.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f,
+    }; 
+
+    std::vector<uint8_t> indices{ 
+        0, 1, 2,
+        2, 3, 0,
     };
-    vto.add(sizeof(vertex2), fmt_v2_buffer, 0);
 
-    vto.build(tr::data_format::UINT32);
+    vto.update(0, vertices);
+    vto.update(indices);
+
+    // tr::set_blend_mode(tr::blend_mode::SRC_ALPHA, tr::blend_mode::ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // tr::vertex_format_list_t fmt_v1_buffer{
+    //     // attribute 0 is the position
+    //     tr::vertex_format{ 0, 3, tr::data_format::FLOAT32, offsetof(vertex1, pos) },
+    //     // attribute 1 is the color
+    //     tr::vertex_format{ 1, 4, tr::data_format::UINT8, tr::vertex_format_conversion::float_range, offsetof(vertex1, color) },
+    //     // attribute 2 is the normal
+    //     tr::vertex_format{ 2, 3, tr::data_format::FLOAT32, offsetof(vertex1, normal) },
+    // };
+    // vto.add(sizeof(vertex1), fmt_v1_buffer);
+
+    // tr::vertex_format_list_t fmt_v2_buffer{
+    //     // attribute 3 is texture co-ordinate 1
+    //     tr::vertex_format{ 3, 2, tr::data_format::FLOAT32, offsetof(vertex2, tex0) },
+    //     // attribute 4 is texture co-ordinate 2
+    //     tr::vertex_format{ 4, 2, tr::data_format::FLOAT32, offsetof(vertex2, tex1) },
+    // };
+    // vto.add(sizeof(vertex2), fmt_v2_buffer);
+
+    // vto.build(true, tr::data_format::UINT32);
 
     // The running flag
     bool running{ true };
@@ -699,7 +732,16 @@ int main(int argc, char* argv[])
 
         shaders.front().apply();
         // Renders the code to a texture attached to the FBO
-        test(fbo);
+        //test(fbo);
+
+        // Imaginary syntax
+        // with shaders, fbo:
+        //    vto.draw();
+        {
+            tr::scope buffer(fbo);
+            vto.draw();
+        }
+
         ImGui::Begin("Game");
         if(resize) {
             ImVec2 v = ImGui::GetContentRegionAvail();

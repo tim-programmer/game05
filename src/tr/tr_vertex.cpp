@@ -48,13 +48,16 @@ GLenum primitive_to_gl(primitive p)
 
 struct vertex_object_impl
 {
-    virtual bool build(size_t index_size_bytes, const std::vector<vertex_specifier>& fmts) { return false; }
-    virtual void draw() {}
+    virtual bool build(bool indexed, size_t index_size_bytes, const std::vector<vertex_specifier>& fmts) { return false; }
+    virtual void draw(bool indexed, size_t instance_count) {}
+    virtual void update(vertex_object::update_type type, size_t index, const void* buffer, size_t length) {}
 };
+
 
 struct gl_vertex_object_impl : public vertex_object_impl
 {
     std::vector<std::vector<uint8_t>> vertex_buffers_{ };
+    std::vector<size_t> cumulative_length_{ };
     std::vector<uint8_t> index_buffer_{ };
 
     unsigned vao_{ 0 };
@@ -63,8 +66,15 @@ struct gl_vertex_object_impl : public vertex_object_impl
     GLenum primitive_{ GL_TRIANGLES };
     GLenum index_format_{ GL_UNSIGNED_INT };
     size_t indicies_{ 0 };
+    size_t vertex_count_{ 0 };
 
+    /// @brief If the vertex buffers have been populated with data.
+    bool buffers_populated_{ false };
+
+    /// @brief If the index buffer has been modified since the last draw call.
     bool index_dirty_{ true };
+    /// @brief If the vertex buffers have been modified since the last draw call.
+    std::vector<bool> vertex_dirty_{ };
 
     gl_vertex_object_impl()
     {
@@ -81,57 +91,108 @@ struct gl_vertex_object_impl : public vertex_object_impl
     }
 
     // Abstract write structured data to the vertex buffer.
-    void write(unsigned index, const void* buffer, size_t length)
+    void update(vertex_object::update_type type, size_t index, const void* buffer, size_t length) override
     {
-        if(index >= vertex_buffers_.size()) {
-            spdlog::critical("index supplied {} exceeds maximum buffer index {}", index, vertex_buffers_.size());
+        if(type == vertex_object::update_type::vertex) {
+            // should think of a better abstraction for writing the indicies.
+            vertex_buffers_[index].assign(static_cast<const uint8_t*>(buffer), static_cast<const uint8_t*>(buffer) + length);
+            vertex_dirty_[index] = true;
+        } else if(type == vertex_object::update_type::index) {
+            index_dirty_ = true;
+            index_buffer_.assign(static_cast<const uint8_t*>(buffer), static_cast<const uint8_t*>(buffer) + length);
+            indicies_ = index;
+        } else {
+            spdlog::critical("Unknown update type specified: {}", static_cast<unsigned>(type));
             std::exit(1);
         }
-        // should think of a better abstraction for writing the indicies.
-        vertex_buffers_[index].assign(static_cast<const uint8_t*>(buffer), static_cast<const uint8_t*>(buffer) + length);
     }
 
-    void write_index(size_t count, const void* buffer, size_t length)
+    void draw(bool indexed, size_t instance_count) override
     {
-        index_dirty_ = true;
-        index_buffer_.assign(static_cast<const uint8_t*>(buffer), static_cast<const uint8_t*>(buffer) + length);
-        indicies_ = count;
-    }
+        // We need to validate that the vertex buffers have been built before we can draw.
+        if(!buffers_populated_) {
+            buffers_populated_ = true;
+            for(size_t n = 0; n < vertex_buffers_.size(); ++n) {
+                if(vertex_buffers_[n].empty()) {
+                    spdlog::critical("Vertex buffer {} is empty, cannot draw.", n);
+                    std::exit(1);
+                }
+                if(vertex_dirty_[n]) {
+                    cumulative_length_.emplace_back(vertex_buffers_[n].size());
+                } else {
+                    buffers_populated_ = false;
+                }
+            }
+        }
 
-    void draw(size_t instance_count)
-    {
+        if(!buffers_populated_) {
+            spdlog::critical("Vertex buffers have not been populated, cannot draw.");
+            std::exit(1);
+        }
+
         // Update the opengl vertex if buffers have been modified.
-        // XXX Either glBufferSubData() or glNamedBufferSubData()
+        // Either glBufferSubData() or glNamedBufferSubData()
+        for(size_t n= 0; n < vertex_buffers_.size(); ++n) {
+            if(vertex_dirty_[n]) {
+                // If we have GL_ARB_direct_state_access then we can use glNamedBufferSubData() to update the buffer.
+                if(GLAD_GL_ARB_direct_state_access) {
+                    if(GLAD_GL_ARB_vertex_attrib_binding) {
+                        glNamedBufferSubData(vbo_[n], 0, vertex_buffers_[n].size(), vertex_buffers_[n].data());
+                    } else {
+                        glNamedBufferSubData(vbo_[0], cumulative_length_[n], vertex_buffers_[n].size(), vertex_buffers_[n].data());
+                    }
+                } else {
+                    if(GLAD_GL_ARB_vertex_attrib_binding) {
+                        glBindBuffer(GL_ARRAY_BUFFER, vbo_[n]);
+                        glBufferSubData(GL_ARRAY_BUFFER, 0, vertex_buffers_[n].size(), vertex_buffers_[n].data());
+                    } else {
+                        glBindBuffer(GL_ARRAY_BUFFER, vbo_[0]);
+                        glBufferSubData(GL_ARRAY_BUFFER, cumulative_length_[n], vertex_buffers_[n].size(), vertex_buffers_[n].data());
+                    }
+                }
+                vertex_dirty_[n] = false;
+            }
+        }
 
         // Update the index buffer if it has been modified.
-        if(index_dirty_) {
+        if(indexed && index_dirty_) {
             glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, index_buffer_.size(), index_buffer_.data());
             index_dirty_ = false;
-        }
+        }        
 
         // Draw call, n.b. all draw calls use indexing.
         if(instance_count > 0) {
-            glBindVertexArray(vao_); 
-            glDrawElementsInstanced(primitive_, indicies_, index_format_, nullptr, instance_count);
+            glBindVertexArray(vao_);
+            if(indexed) {
+                glDrawElementsInstanced(primitive_, indicies_, index_format_, nullptr, instance_count);
+            } else {
+                glDrawArraysInstanced(primitive_, 0, vertex_count_, instance_count);
+            }
         } else {
             glBindVertexArray(vao_); 
-            glDrawElements(primitive_, indicies_, index_format_, nullptr);
+            if(indexed) {
+                glDrawElements(primitive_, indicies_, index_format_, nullptr);
+            } else {
+                glDrawArrays(primitive_, 0, vertex_count_);
+            }
         }
     }
 
-    bool build(size_t index_size_bytes, const std::vector<vertex_specifier>& fmts) override
+    bool build(bool indexed, size_t index_size_bytes, const std::vector<vertex_specifier>& fmts) override
     {
         // The calling function should garauntee that fmts isn't empty.
         // It's in the contract.
-        
+
         // Generate buffers based on the number of format lists passed in.
         // should be one singular vertex buffer if no GLAD_GL_ARB_vertex_attrib_binding
         if(GLAD_GL_ARB_vertex_attrib_binding) {
             vertex_buffers_.resize(fmts.size());
+            vertex_dirty_.resize(fmts.size());
             vbo_.resize(fmts.size());
             glGenBuffers(fmts.size(), vbo_.data());
         } else {
             vertex_buffers_.resize(1);
+            vertex_dirty_.resize(1);
             vbo_.resize(1);
             glGenBuffers(1, vbo_.data());
         }
@@ -146,27 +207,29 @@ struct gl_vertex_object_impl : public vertex_object_impl
         // create the buffer and optionally assign data to it.
         // Would require passing in the data size from the interface api though, which is doable.
         // N.B. if we needed to change the buffer size then we would need to destroy the buffer index and re-create it.
-        if(GLAD_GL_ARB_buffer_storage) {
-            glCreateBuffers(1, &ibo_);
-            if(index_size_bytes > 0) {
+        if(indexed) {
+            if(GLAD_GL_ARB_buffer_storage) {
+                glCreateBuffers(1, &ibo_);
+                if(index_size_bytes > 0) {
+                    if(GLAD_GL_ARB_direct_state_access) {
+                        glNamedBufferStorage(ibo_, index_size_bytes, NULL, GL_DYNAMIC_STORAGE_BIT);
+                    } else {
+                        glBufferStorage(GL_ELEMENT_ARRAY_BUFFER, index_size_bytes, NULL, GL_DYNAMIC_STORAGE_BIT);
+                    }
+                }
+            } else {
+                glGenBuffers(1, &ibo_);
                 if(GLAD_GL_ARB_direct_state_access) {
-                    glNamedBufferStorage(ibo_, index_size_bytes, NULL, GL_DYNAMIC_STORAGE_BIT);
+                    glVertexArrayElementBuffer(vao_, ibo_);
                 } else {
-                    glBufferStorage(GL_ELEMENT_ARRAY_BUFFER, index_size_bytes, NULL, GL_DYNAMIC_STORAGE_BIT);
+                    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_);
                 }
             }
-        } else {
-            glGenBuffers(1, &ibo_);
-            if(GLAD_GL_ARB_direct_state_access) {
-                glVertexArrayElementBuffer(vao_, ibo_);
-            } else {
-                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_);
-            }
-        }
 
-        // Resize the underlying index buffer if we know the size
-        if(index_size_bytes > 0) {
-            index_buffer_.resize(index_size_bytes);
+            // Resize the underlying index buffer if we know the size
+            if(index_size_bytes > 0) {
+                index_buffer_.resize(index_size_bytes);
+            }
         }
 
         for (auto [fmt, buff, vbuffer] : std::views::zip(fmts, vbo_, vertex_buffers_)) {
@@ -201,8 +264,8 @@ struct gl_vertex_object_impl : public vertex_object_impl
                 }
 
             } else if(GLAD_GL_ARB_vertex_attrib_binding) {
-                // seperate attribute binding, but no direct state access.                
-                glBindVertexBuffer(0, buff, 0, fmt.stride_);                
+                // seperate attribute binding, but no direct state access.
+                glBindVertexBuffer(0, buff, 0, fmt.stride_);
                 for(auto& attrib : fmt.vformats_) {
                     GLenum atype = data_format_to_gl(attrib.type_);
                     glEnableVertexAttribArray(attrib.attrib_);
@@ -308,13 +371,15 @@ void vertex_object::add(size_t stride, const vertex_format_list_t& fmts, size_t 
     fmts_.emplace_back(stride, fmts, elements);
 }
 
-void vertex_object::draw() const
+void vertex_object::draw(size_t instance_count) const
 {
-    pimpl_->draw();
+    pimpl_->draw(indexed_, instance_count);
 }
 
-bool vertex_object::build(data_format dfmt, size_t index_size)
+bool vertex_object::build(bool indexed, data_format dfmt, size_t index_size)
 {
+    indexed_ = indexed;
+
     // No format data is an error.
     if(fmts_.empty()) {
         spdlog::critical("No formats specified for vertex object.");
@@ -323,25 +388,41 @@ bool vertex_object::build(data_format dfmt, size_t index_size)
 
     size_t index_size_bytes = 0;
 
-    // Data format not unsigned 8, 16 or 32-bit is an error.
-    switch(dfmt) {
-        case data_format::UINT8:
-            index_size_bytes = index_size = sizeof(uint8_t);
-            break;
-        case data_format::UINT16:
-            index_size_bytes = index_size = sizeof(uint16_t);
-            break;
-        case data_format::UINT32:
-            index_size_bytes = index_size = sizeof(uint32_t);
-            break;
-        default:
-            spdlog::critical("Data format must be unsigned char, short or integer.");
-            std::exit(1);
+    if(indexed_) {
+        // Data format not unsigned 8, 16 or 32-bit is an error.
+        switch(dfmt) {
+            case data_format::UINT8:
+                index_size_bytes = index_size = sizeof(uint8_t);
+                break;
+            case data_format::UINT16:
+                index_size_bytes = index_size = sizeof(uint16_t);
+                break;
+            case data_format::UINT32:
+                index_size_bytes = index_size = sizeof(uint32_t);
+                break;
+            default:
+                spdlog::critical("Data format must be unsigned char, short or integer.");
+                std::exit(1);
+        }
     }
     data_format_ = dfmt;
     index_size_ = index_size;
 
-    return pimpl_->build(index_size_bytes, fmts_);
+    return pimpl_->build(indexed_, index_size_bytes, fmts_);
+}
+
+void vertex_object::update(update_type type, size_t index, const void *buffer, size_t length)
+{
+    if(type == update_type::vertex && index >= fmts_.size()) {
+        spdlog::critical("Index {} exceeds maximum vertex index {}", index, fmts_.size());
+        std::exit(1);
+    }
+
+    if(type != update_type::vertex && type != update_type::index) {
+        spdlog::critical("Neither vertex or index was given for the update type: {}", static_cast<unsigned>(type));
+        std::exit(1);
+    }        
+    pimpl_->update(type, index, buffer, length);
 }
 
 

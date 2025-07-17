@@ -61,14 +61,34 @@ struct vertex_object_impl;
 class vertex_object
 {
 public:
+    enum class update_type
+    {
+        /// @brief Update the vertex data.
+        vertex,
+        /// @brief Update the index data.
+        index,
+    };
     static vertex_object create(std::string_view pipeline);
     
     virtual ~vertex_object();
     void bind() const;
-    void draw() const;
+    void draw(size_t instance_count = 0) const;
 
     void add(size_t stride, const vertex_format_list_t& fmts, size_t elements_ = 0);
-    bool build(tr::data_format dfmt = tr::data_format::INT32, size_t index_size = 0);
+    bool build(bool indexed, tr::data_format dfmt = tr::data_format::UINT32, size_t index_size = 0);
+
+    template<typename T>
+    void update(size_t index, const std::vector<T>& data)
+    {
+        update(update_type::vertex, index, data.data(), data.size() * sizeof(T));
+    }
+    template<typename T>
+    void update(const std::vector<T>& data)
+    {
+        update(update_type::index, data.size(), data.data(), data.size() * sizeof(T));
+    }
+
+    void update(update_type type, size_t index, const void *buffer, size_t length);
 
     // moveable
     vertex_object(vertex_object && rhs) noexcept;   
@@ -82,8 +102,15 @@ private:
     explicit vertex_object(std::string_view api, std::unique_ptr<vertex_object_impl> impl);
     std::string api_{ };
     std::unique_ptr<vertex_object_impl> pimpl_{ };
+    /// @brief The vertex formats that are used by this vertex object.
+    /// @note The vertex formats are used to describe the vertex data that is going to be used by the vertex object.
     std::vector<vertex_specifier> fmts_{ };
+    /// @brief If the vertex object is indexed or not.
+    /// @note If this is true, the \c index_size_ must be set to a non-zero value.
+    bool indexed_ = false;
+    /// @brief The size of the index buffer, in bytes.
     size_t index_size_ = 0;
+    /// @brief The data format of the index buffer.
     tr::data_format data_format_ = tr::data_format::UINT32;
 };
 
